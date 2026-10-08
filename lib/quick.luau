@@ -75,15 +75,15 @@ function quick.parse(line: string, lookup: Lookup): Parsed
 	local cwd: string? = nil
 	local kept: { Token } = {}
 	for _, word in words do
+		if word.text == "@" then
+			return { problem = "Type a directory after @, as @~/dev/app" }
+		end
 		local dir = string.match(word.text, "^@(.+)$")
 		if dir ~= nil and cwd == nil then
 			cwd = dir
 		else
 			table.insert(kept, word)
 		end
-	end
-	if cwd ~= nil and util.clean(cwd) == nil then
-		return { problem = "Type a directory after @" }
 	end
 
 	local index = 1

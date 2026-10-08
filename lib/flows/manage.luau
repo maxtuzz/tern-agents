@@ -59,11 +59,25 @@ local function declared_refusal(cx: WindowCx, what: string, source: string): boo
 	return true
 end
 
--- Writes one preset into the kv layer.
+-- Writes one preset into the kv layer. A preset of this id that "Remove
+-- preset…" had hidden comes back: otherwise the removal would keep cancelling
+-- the entry, and the command would report a success nothing could see.
 local function store_preset(agent_id: string, name: string, fields: { [string]: any }): string
 	local id = agent_id .. ":" .. util.slug(name)
-	local entry = util.merge({ agent = agent_id, name = name }, fields)
-	cfg.patch("presets", id, entry)
+	local store = cfg.patch("presets", id, util.merge({ agent = agent_id, name = name }, fields))
+	local hidden = util.string_list(store.remove_presets)
+	local at = table.find(hidden, id)
+	if at ~= nil then
+		local kept: { string } = {}
+		for i, other in hidden do
+			if i ~= at then
+				table.insert(kept, other)
+			end
+		end
+		local out = table.clone(store)
+		out.remove_presets = tern.json.array(kept)
+		cfg.save(out)
+	end
 	return id
 end
 
@@ -285,10 +299,9 @@ function manage.refresh(cx: WindowCx, shared: app.Shared)
 	local config = app.config(cx, true)
 	cx:toast("info", "Agents", "Asking " .. detect.shell() .. " what's installed…")
 	detect.refresh(detect.candidates(config.agents :: any), function(cache, err, cx2)
-		local shown = cx2
-		if shown == nil then
-			return
-		end
+		-- A probe that couldn't even start answers on this call stack, with no
+		-- `cx` of its own, so the command's own one is still valid there.
+		local shown = cx2 or cx
 		if cache == nil then
 			shown:toast("error", "Agents", err or "the probe failed")
 			return

@@ -12,7 +12,7 @@ Tern's agent blocks are bound to omp. Make them run whatever agent CLI the user 
 - The binding to omp is in the *extras*, not the block: omp speaks the Tern Surface Protocol (TSP), so Tern draws its chat natively, reports `sendable` from its composer, reads its transcript (`cx.agents:transcript`), and gets working/idle from progress OSC 9;4. Hermes got the same treatment by speaking omp's chat vocabulary. A plain TUI agent gets the block, the Agent chip and Carly visibility, but none of the omp-only extras.
 - Window API `cx.agents` (`tern.d.luau`, `AgentsCx`):
   - `start({prompt, cwd, command?, how?}) -> pane` opens like New agent block; `command` is any command line. **`prompt` must be non-blank** ("agent command, cwd and prompt must not be blank").
-  - `list()` → `{pane, command, agent_command, model, cwd, state, last_message, title, program, session, tab, alive, ...}` across sessions.
+  - `list()` → one `AgentBlock` per agent block across every session. Its documented members are `{pane, command, model, cwd, state, last_message, delivery_error}` (`tern.d.luau`); the richer row with `title`, `program`, `session` and `alive` seen while researching this comes from Carly's own `inspect`, not from the plugin API, so the plugin reads titles from `PaneInfo` instead.
   - `ask`, `wait`, `transcript`, `interrupt` (Ctrl-C), `stop` (close without confirmation).
 
 ### Measured with Claude Code 2.1 in an agent block (2026-10-08)

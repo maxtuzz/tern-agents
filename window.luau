@@ -87,30 +87,20 @@ tern.route.link(function(link: LinkRequest, cx: WindowCx): RouteDecision?
 	return app().link(link, cx, shared)
 end)
 
--- Panes that are gone take their records with them, so the block and the
--- status line never show a launch that isn't there.
-local function prune(cx: WindowCx)
-	local alive: { [number]: boolean } = {}
-	for _, info in cx.session:panes() do
-		alive[info.pane] = true
-	end
-	if runs.prune(alive) > 0 then
-		reload()
-	end
-end
-
-tern.on("window_start", function(cx: WindowCx)
+tern.on("window_start", function(_cx: WindowCx)
 	reload()
-	prune(cx)
 	-- A first probe for installed agents, so the first "New agent…" has
 	-- something to offer without waiting for a shell.
 	local loaded = app()
 	loaded.ensure_detected(loaded.config(nil, false), nil)
 end)
 
-tern.on("pane_closed", function(ev: PaneEvent, cx: WindowCx)
+-- A window sees only its own panes, and the records are shared by every
+-- window, so this half never deletes one: the host half (which can see every
+-- pane on the machine) sweeps, and this only re-reads what is left.
+tern.on("pane_closed", function(ev: PaneEvent, _cx: WindowCx)
 	if tracked[ev.pane] ~= nil then
-		prune(cx)
+		reload()
 	end
 end)
 
@@ -122,13 +112,9 @@ tern.on("title", function(ev: TitleEvent, _cx: WindowCx)
 	end
 end)
 
-tern.on("focus", function(_ev: FocusEvent, cx: WindowCx)
-	-- A pane closed from outside this window — another window, or `tern
-	-- close` — fires no `pane_closed` here, so a focus change is also when
-	-- records of panes that are gone get swept.
-	prune(cx)
-	-- Another window (or the host half, on an exit) may have changed the
-	-- records; reading them is a stat.
+tern.on("focus", function(_ev: FocusEvent, _cx: WindowCx)
+	-- Another window, or the host half (on an exit, or its sweep), may have
+	-- changed the records; reading them is a stat.
 	local fresh = runs.all()
 	local changed = false
 	for pane in fresh do

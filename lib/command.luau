@@ -69,32 +69,31 @@ end
 
 -- The words a profile and preset start from: the preset's own command line,
 -- else the agent's, else its binary and default args.
-local function base_words(agent: cfg.Agent, preset: cfg.Preset): ({ string }, boolean)
+local function base_words(agent: cfg.Agent, preset: cfg.Preset): { string }
 	if preset.command ~= nil then
-		return util.split_args(preset.command), true
+		return util.split_args(preset.command)
 	end
 	if agent.command ~= nil then
-		return util.split_args(agent.command), true
+		return util.split_args(agent.command)
 	end
 	local out = { agent.bin }
 	for _, arg in agent.args do
 		table.insert(out, arg)
 	end
-	return out, false
+	return out
 end
 
 -- The command line for `agent` + `preset`. Raises when the profile names no
 -- program at all.
 function command.build(agent: cfg.Agent, preset: cfg.Preset, opts: Options?): Spec
 	local o: Options = opts or {}
-	local words, from_line = base_words(agent, preset)
+	local words = base_words(agent, preset)
 	if #words == 0 or util.trim(words[1]) == "" then
 		error(string.format("%s has no command to run", agent.label), 0)
 	end
 	-- `replace_args` keeps only the program: the agent's default args go, and
 	-- so do the args of a whole command line, which is the same promise.
 	local argv: { string } = if preset.replace_args then { words[1] } else table.clone(words)
-	local _ = from_line
 	for _, arg in preset.args do
 		table.insert(argv, arg)
 	end

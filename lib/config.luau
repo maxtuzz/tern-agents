@@ -223,9 +223,8 @@ end
 -- The built-in config, with no user layers.
 function config.defaults(): Config
 	local cfg = fresh()
-	for id, agent in cfg.agents do
+	for _, agent in cfg.agents do
 		(agent :: any).source = "builtin"
-		local _ = id
 	end
 	for _, preset in cfg.presets do
 		(preset :: any).source = "builtin"
@@ -262,6 +261,13 @@ function config.apply(cfg: Config, layer: any, source: string): Config
 			out.agents[agent.id] = agent
 		end
 	end
+	-- Removals come first, so a layer that both hides a preset and defines one
+	-- of that name (the palette's "Remove preset…" then "Add preset…") ends up
+	-- with the preset, and a later layer can always bring one back.
+	for _, id in util.string_list(layer.remove_presets) do
+		out.presets[id] = nil
+		out.default_preset = if out.default_preset == id then nil else out.default_preset
+	end
 	for _, entry in entries(layer.presets) do
 		local preset = config.normalize_preset(entry.key, entry.value, out.presets[entry.key], source)
 		if preset == nil then
@@ -269,10 +275,6 @@ function config.apply(cfg: Config, layer: any, source: string): Config
 		else
 			out.presets[preset.id] = preset
 		end
-	end
-	for _, id in util.string_list(layer.remove_presets) do
-		out.presets[id] = nil
-		out.default_preset = if out.default_preset == id then nil else out.default_preset
 	end
 	local default_agent = util.clean(layer.default_agent)
 	if default_agent ~= nil then
@@ -516,12 +518,20 @@ function config.save(store: { [string]: any })
 	tern.kv.set(config.KEY, store)
 end
 
--- Merges `patch` into the stored layer's `section` ("agents" or "presets") at
+-- Merges `fields` into the stored layer's `section` ("agents" or "presets") at
 -- `id`; a nil `fields` removes the entry. Returns the new store.
+--
+-- A merge, not a replacement: "Edit preset…" sends only `args`, and it must
+-- not throw away the `command` an Orca import stored, or a preset's `prompt`,
+-- `env`, `cwd` and placement. Fields the palette can't reach are changed in
+-- `agents.json`.
 function config.patch(section: string, id: string, fields: { [string]: any }?): { [string]: any }
 	local store = config.stored()
 	local sub: { [string]: any } = if type(store[section]) == "table" then table.clone(store[section]) else {}
-	sub[id] = fields
+	local before = sub[id]
+	sub[id] = if fields == nil
+		then nil
+		else util.merge(if type(before) == "table" then before else nil, fields)
 	local out = table.clone(store)
 	out[section] = sub
 	config.save(out)

@@ -48,7 +48,6 @@
 }
 
 /* A chip that acts like a button says so. */
-[data-surface^='plugin.agents.'] .sf-badge[data-act],
 [data-surface^='plugin.agents.'] .sf-badge[tabindex] {
 	cursor: pointer;
 }

@@ -30,7 +30,6 @@ type State = {
 	presets: { { id: string, label: string, detail: string } },
 	problems: { string },
 	sel: number,
-	cols: number,
 	timer: TimerHandle?,
 	home: string?,
 }
@@ -67,6 +66,9 @@ local function quick_presets(config: cfg.Config, detected: { [string]: boolean }
 end
 
 local function refresh(state: State)
+	-- The block runs in the host half, so it is allowed to sweep: the pane
+	-- list it reads is the whole machine's, not one window's.
+	pcall(runs.sweep)
 	local records = runs.list()
 	state.rows = model.rows(records, pane_facts(), os.time())
 	state.counts = model.counts(state.rows)
@@ -192,7 +194,7 @@ local function view_nodes(state: State, cols: number): { Node }
 	return out
 end
 
-local function act(state: State, cx: BlockCx, action: string, value: string?)
+local function act(cx: BlockCx, action: string, value: string?)
 	if action == "focus" or action == "kill" or action == "restart" or action == "duplicate" or action == "send" then
 		local pane = tonumber(value)
 		if pane ~= nil then
@@ -215,7 +217,6 @@ local block: BlockDef<State> = {
 			presets = {},
 			problems = {},
 			sel = if type(saved) == "table" and type(saved.sel) == "number" then saved.sel else 1,
-			cols = cx.cols,
 			timer = nil,
 			home = tern.getenv("HOME"),
 		}
@@ -277,15 +278,15 @@ local block: BlockDef<State> = {
 		elseif name == "up" or name == "k" then
 			state.sel = math.max(state.sel - 1, 1)
 		elseif name == "n" then
-			act(state, cx, "new", nil)
+			act(cx, "new", nil)
 		elseif name == "/" then
-			act(state, cx, "quick", nil)
+			act(cx, "quick", nil)
 		elseif name == "enter" and row ~= nil then
-			act(state, cx, "focus", tostring(row.pane))
+			act(cx, "focus", tostring(row.pane))
 		elseif name == "r" and row ~= nil then
-			act(state, cx, "restart", tostring(row.pane))
+			act(cx, "restart", tostring(row.pane))
 		elseif name == "x" and row ~= nil then
-			act(state, cx, "kill", tostring(row.pane))
+			act(cx, "kill", tostring(row.pane))
 		elseif name == "g" then
 			refresh(state)
 		else
@@ -296,14 +297,10 @@ local block: BlockDef<State> = {
 
 	event = function(state, ev, cx)
 		if ev.ev == "action" and type(ev.act) == "string" then
-			act(state, cx, ev.act :: string, ev.value)
+			act(cx, ev.act :: string, ev.value)
 		elseif ev.ev == "focus" then
 			refresh(state)
 		end
-	end,
-
-	resize = function(state, cols, _rows, _cx)
-		state.cols = cols
 	end,
 
 	save = function(state)

@@ -452,7 +452,7 @@ test("quick entry takes a directory with @ and keeps it out of the prompt", func
 	local trailing = quick.parse("claude read the diff @/tmp/x", lookup(nil))
 	eq(trailing.cwd, "/tmp/x")
 	eq(trailing.prompt, "read the diff")
-	eq(quick.parse("@ x", lookup(nil)).problem, nil, "a bare @ is just a word")
+	has(quick.parse("claude @ fix it", lookup(nil)).problem :: string, "Type a directory after @")
 end)
 
 test("an agent alone launches with no prompt", function()
@@ -817,8 +817,10 @@ test("the host half defines its blocks and watches for exits", function()
 	truthy(stub.registered.blocks.line)
 	truthy(stub.registered.events.pane_exited, "exit statuses come from the host half")
 	runs.put(record(21, os.time()))
+	stub.panes = { { pane = 21, title = "", cwd = "/r", program = "zsh" } }
 	stub.registered.events.pane_exited[1]({ pane = 21, status = 1 }, stub.block_cx())
 	eq((runs.get(21) :: runs.Record).exited, 1)
+	truthy((runs.get(21) :: runs.Record).exited_at, "and when it ended")
 	stub.reset()
 end)
 
@@ -861,15 +863,35 @@ test("the status line names the agent in a tracked pane", function()
 	stub.reset()
 end)
 
-test("records of panes that are gone are swept on a focus change", function()
+test("the host half sweeps records, and keeps a just-ended one on screen", function()
 	stub.reset()
-	runs.put(record(32, os.time() - 60))
-	runs.put(record(33, os.time()))
-	-- The window's panes are 10 only, so 32 (old) goes and 33 (young, maybe
-	-- not listed yet) stays.
-	stub.registered.events.focus[1]({ pane = 10, tab = 1 }, stub.window_cx())
-	eq(runs.get(32), nil, "a pane closed from outside this window")
+	local now = os.time()
+	runs.put(record(32, now - 60))
+	runs.put(record(33, now))
+	local ended = record(34, now - 600)
+	ended.exited = 1
+	ended.exited_at = now - 5
+	runs.put(ended)
+	-- Only pane 33's own pane is listed; 32 is gone, 34 ended five seconds ago.
+	stub.panes = { { pane = 33, title = "", cwd = "/r", program = "zsh" } }
+	eq(runs.sweep(), 1)
+	eq(runs.get(32), nil, "a pane that is gone")
 	truthy(runs.get(33), "a launch Tern may not have listed yet")
+	truthy(runs.get(34), "an exit status stays readable for a while")
+	-- Two minutes later it goes too.
+	local stale = runs.stale(runs.all(), {}, now + 200)
+	truthy(table.find(stale, 34), "and then it is swept")
+	stub.reset()
+end)
+
+test("a window never deletes a shared record, it only re-reads", function()
+	stub.reset()
+	local now = os.time()
+	runs.put(record(35, now - 60))
+	-- This window knows pane 10 only; pane 35 may belong to another window.
+	stub.registered.events.focus[1]({ pane = 10, tab = 1 }, stub.window_cx())
+	stub.registered.events.pane_closed[1]({ pane = 35 }, stub.window_cx())
+	truthy(runs.get(35), "another window's agent survives this window's events")
 	stub.reset()
 end)
 
@@ -1093,6 +1115,166 @@ test("Carly can launch, list and send", function()
 		call_export("launch", 4, cx, { agent = "nope" })
 	end, "No agent")
 	stub.reset()
+end)
+
+-- the config commands ------------------------------------------------------
+
+-- Runs palette command `id` with `cx`.
+local function palette(id: string, cx: any)
+	for _, c in stub.registered.commands do
+		if c.id == id then
+			c.run(cx)
+			return
+		end
+	end
+	error("no command " .. id, 2)
+end
+
+-- Answers the dialog the last block opened: a pick `choice`, or a typed line.
+local function answer(cx: any, params: { [string]: string })
+	local arg = stub.last_block(cx)
+	local action = if params.choice ~= nil then "pick" else "line"
+	local full: { [string]: string } = { token = arg.token }
+	for k, v in params do
+		full[k] = v
+	end
+	stub.registered.links[1]({ url = url.build(action, full), pane = 98, mods = {} }, cx)
+end
+
+-- The `choice` of the picker row whose label holds `needle`.
+local function row_choice(cx: any, needle: string): string
+	local arg = stub.last_block(cx)
+	for _, item in arg.items do
+		if string.find(item.label, needle, 1, true) ~= nil then
+			return item.choice
+		end
+	end
+	error("no row holding " .. needle, 2)
+end
+
+test("a removed built-in preset can be added back", function()
+	stub.reset()
+	local cx = stub.window_cx("/work/app")
+	palette("rmpreset", cx)
+	answer(cx, { choice = row_choice(cx, "Claude Code · haiku") })
+	eq(cfg.find_preset(cfg.load(), "claude", "haiku"), nil, "it is hidden")
+	palette("addpreset", cx)
+	answer(cx, { line = "claude haiku --model haiku" })
+	local back = cfg.find_preset(cfg.load(), "claude", "haiku")
+	truthy(back, "and adding it again brings it back, as the toast claims")
+	eq((back :: cfg.Preset).args[2], "haiku")
+	stub.reset()
+end)
+
+test("editing a preset's args keeps the rest of it", function()
+	stub.reset()
+	local cx = stub.window_cx("/work/app")
+	stub.kv.config = {
+		presets = {
+			["codex:orca"] = {
+				agent = "codex",
+				name = "orca",
+				command = "codex --sandbox danger-full-access",
+				how = "tab",
+				prompt = "read the diff",
+			},
+		},
+	}
+	palette("editpreset", cx)
+	answer(cx, { choice = row_choice(cx, "Codex · orca") })
+	answer(cx, { line = "--search" })
+	local edited = cfg.find_preset(cfg.load(), "codex", "orca") :: cfg.Preset
+	eq(edited.args[1], "--search")
+	eq(edited.command, "codex --sandbox danger-full-access", "an imported command line survives")
+	eq(edited.how, "tab")
+	eq(edited.prompt, "read the diff")
+	stub.reset()
+end)
+
+test("adding an agent again keeps the fields the dialog can't reach", function()
+	stub.reset()
+	local cx = stub.window_cx("/work/app")
+	stub.kv.config = { agents = { mycli = { id = "mycli", bin = "mycli", env = { TOKEN = "x" }, icon = "code" } } }
+	palette("addagent", cx)
+	answer(cx, { line = "mycli /opt/bin/mycli --quiet" })
+	local agent = cfg.load().agents.mycli
+	eq(agent.bin, "/opt/bin/mycli")
+	eq(agent.args[1], "--quiet")
+	eq(agent.env.TOKEN, "x", "its env was not thrown away")
+	eq(agent.icon, "code")
+	stub.reset()
+end)
+
+test("a default preset is set for one agent, or for everything", function()
+	stub.reset()
+	local cx = stub.window_cx("/work/app")
+	palette("setdefault", cx)
+	answer(cx, { choice = row_choice(cx, "Claude Code · yolo") })
+	answer(cx, { choice = "agent" })
+	local per_agent = cfg.load()
+	eq((cfg.default_preset_of(per_agent, "claude") :: cfg.Preset).id, "claude:yolo")
+	eq(per_agent.default_preset, nil, "not the global one")
+	palette("setdefault", cx)
+	answer(cx, { choice = row_choice(cx, "Codex · yolo") })
+	answer(cx, { choice = "global" })
+	local global = cfg.load()
+	eq(global.default_preset, "codex:yolo")
+	eq(global.default_agent, "codex")
+	stub.reset()
+end)
+
+test("the palette refuses to edit what agents.json declares", function()
+	stub.reset()
+	local cx = stub.window_cx("/work/app")
+	-- The stub's encode/decode round-trips a table, so this stands in for a
+	-- hand-edited file.
+	stub.files["/data/agents.json"] = tern.json.encode({
+		presets = { ["claude:yolo"] = { agent = "claude", name = "yolo", args = "--hand" } },
+	})
+	palette("editpreset", cx)
+	answer(cx, { choice = row_choice(cx, "Claude Code · yolo") })
+	has(cx.toasts[#cx.toasts].sub, "declared in agents.json")
+	eq(#cx.blocks, 1, "no editor was opened")
+	stub.reset()
+end)
+
+test("Open agents.json writes a starter file once", function()
+	stub.reset()
+	local cx = stub.window_cx("/work/app")
+	palette("openjson", cx)
+	local written = stub.files["/data/agents.json"]
+	truthy(written, "a starter file")
+	has(written :: string, "default_agent")
+	eq(cx.opens[#cx.opens].target, "/data/agents.json")
+	stub.reset()
+end)
+
+test("config.patch merges, and a nil removes", function()
+	stub.reset()
+	cfg.patch("presets", "x:y", { agent = "x", name = "y", command = "x --go" })
+	cfg.patch("presets", "x:y", { args = { "--more" } })
+	local stored = cfg.stored()
+	eq(stored.presets["x:y"].command, "x --go")
+	eq(stored.presets["x:y"].args[1], "--more")
+	cfg.patch("presets", "x:y", nil)
+	eq(cfg.stored().presets["x:y"], nil)
+	stub.reset()
+end)
+
+test("a title heuristic of none still reports busy", function()
+	eq(status.of({ title = "✳ idle", busy = true }, "none").state, "working")
+	eq(status.of({ title = "✳ idle" }, "none").state, "running")
+	eq(status.of({ title = "a · b" }, "claude").state, "running", "a middle dot is punctuation")
+end)
+
+test("the caret crosses to UTF-16 units for Tern's input node", function()
+	eq(util.utf16_units("abc"), 3)
+	eq(util.utf16_units("café"), 4, "é is two bytes, one unit")
+	eq(util.utf16_units("🐑"), 2, "a surrogate pair is two units")
+	local f = field.new("café")
+	eq(f.cursor, 5, "bytes for string.sub")
+	eq(field.draw_cursor(f), 4, "units for the view")
+	eq(util.utf16_units("\xff\xfe"), 2, "invalid UTF-8 falls back to bytes")
 end)
 
 -- result -------------------------------------------------------------------

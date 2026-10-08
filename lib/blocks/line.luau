@@ -35,6 +35,10 @@ type Ctx = {
 	grammar: string?,
 	agents: { AgentHint }?,
 	home: string?,
+	--- The agent a line without one would use, for the preview only.
+	default_agent: string?,
+	--- The directory a relative `@dir` resolves against.
+	cwd: string?,
 }
 
 type State = { ctx: Ctx, line: field.Field, submitted: boolean }
@@ -86,9 +90,10 @@ local function row(label: string, value: string, tone: string?): { { any } }
 end
 
 -- The lookups the quick grammar needs, built from the agents the window sent.
-local function lookups(agents: { AgentHint }): quick.Lookup
+local function lookups(agents: { AgentHint }, default_agent: string?): quick.Lookup
 	local by_token: { [string]: string } = {}
 	local presets: { [string]: { [string]: boolean } } = {}
+	local ids: { [string]: { [string]: string } } = {}
 	for _, agent in agents do
 		by_token[string.lower(agent.id)] = agent.id
 		by_token[string.lower(agent.label)] = agent.id
@@ -96,10 +101,13 @@ local function lookups(agents: { AgentHint }): quick.Lookup
 			by_token[string.lower(agent.bin :: string)] = agent.id
 		end
 		local names: { [string]: boolean } = {}
+		local by_name: { [string]: string } = {}
 		for _, name in agent.presets do
 			names[string.lower(name)] = true
+			by_name[string.lower(name)] = agent.id .. ":" .. name
 		end
 		presets[agent.id] = names
+		ids[agent.id] = by_name
 	end
 	return {
 		agent = function(token: string): string?
@@ -108,14 +116,16 @@ local function lookups(agents: { AgentHint }): quick.Lookup
 		preset = function(agent: string, token: string): string?
 			local names = presets[agent]
 			if names ~= nil and names[string.lower(token)] then
-				return token
+				local known = ids[agent]
+				return if known then known[string.lower(token)] else token
 			end
 			return nil
 		end,
-		-- The dialog doesn't know the default agent; a preset-first line is
-		-- previewed as a prompt and resolved for real by the window.
+		-- The window sends the default agent, so a preset-first line (`yolo
+		-- fix it`) previews the same way it will launch. The window still
+		-- parses the line again against the live config.
 		default_agent = function(): string?
-			return nil
+			return default_agent
 		end,
 	}
 end
@@ -126,7 +136,7 @@ local function preview(state: State): { Node }
 		return {}
 	end
 	local agents = state.ctx.agents or {}
-	local parsed = quick.parse(state.line.text, lookups(agents))
+	local parsed = quick.parse(state.line.text, lookups(agents, state.ctx.default_agent))
 	if parsed.problem ~= nil then
 		return { ui.text({ ui.span(parsed.problem :: string, "error") }) }
 	end
@@ -140,7 +150,8 @@ local function preview(state: State): { Node }
 		),
 	}
 	if parsed.cwd ~= nil then
-		table.insert(rows, row("in", util.resolve("/", parsed.cwd :: string, state.ctx.home)))
+		local base = util.clean(state.ctx.cwd) or state.ctx.home or "/"
+		table.insert(rows, row("in", util.tilde(util.resolve(base, parsed.cwd :: string, state.ctx.home), state.ctx.home)))
 	end
 	return { ui.kv(rows) }
 end
@@ -171,7 +182,7 @@ local dialog: BlockDef<State> = {
 			ui.node("input", {
 				key = "line",
 				text = state.line.text,
-				cursor = state.line.cursor,
+				cursor = field.draw_cursor(state.line),
 				placeholder = state.ctx.placeholder or "",
 				prompt = { ui.span("› ", "muted") },
 			}),

@@ -118,6 +118,8 @@ function app.line(
 		hints: { any }?,
 		grammar: string?,
 		agents: { any }?,
+		default_agent: string?,
+		cwd: string?,
 	},
 	on_line: (WindowCx, string) -> ()
 )
@@ -134,6 +136,8 @@ function app.line(
 		placeholder = spec.placeholder,
 		submit = spec.submit,
 		grammar = spec.grammar,
+		default_agent = spec.default_agent,
+		cwd = spec.cwd,
 		home = HOME,
 		hints = tern.json.array(spec.hints or {}),
 		agents = tern.json.array(spec.agents or {}),

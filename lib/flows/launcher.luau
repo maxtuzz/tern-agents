@@ -12,6 +12,12 @@ local launch = require("../launch")
 
 local launcher = {}
 
+-- The agent a line that names none would use, as quick entry resolves it.
+local function default_agent_id(config: cfg.Config): string?
+	local agent = if config.default_agent then cfg.find_agent(config, config.default_agent) else nil
+	return if agent then agent.id else nil
+end
+
 -- Every preset of every shown agent, as picker rows.
 local function preset_rows(config: cfg.Config, detected: { [string]: boolean }): ({ any }, { cfg.Preset })
 	local items: { any } = {}
@@ -118,6 +124,8 @@ function launcher.quick(cx: WindowCx, shared: app.Shared)
 		submit = "Launch",
 		grammar = "quick",
 		agents = app.grammar(config, detected),
+		default_agent = default_agent_id(config),
+		cwd = launch.focused_cwd(cx),
 		hints = {
 			{ text = "A first word that names an agent, then one that names a preset, then the prompt." },
 			{ text = "@~/dev/app runs it there; without one it uses the focused pane's directory." },
@@ -133,8 +141,7 @@ function launcher.quick(cx: WindowCx, shared: app.Shared)
 				return if preset then preset.id else nil
 			end,
 			default_agent = function(): string?
-				local agent = if config.default_agent then cfg.find_agent(config, config.default_agent) else nil
-				return if agent then agent.id else nil
+				return default_agent_id(config)
 			end,
 		})
 		if parsed.problem ~= nil then

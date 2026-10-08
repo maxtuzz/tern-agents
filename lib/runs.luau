@@ -28,12 +28,14 @@ export type Record = {
 	started_at: number,
 	--- "split", "tab", "replace_if_alone".
 	how: string?,
-	--- "block" (a real agent block) or "argv" (a terminal pane).
+	--- "block" (a real agent block) or "pane" (a terminal pane).
 	kind: string?,
 	--- The prompt the launch delivered, when there was one.
 	prompt: string?,
 	--- Exit status, filled in by the host half when the program ends.
 	exited: number?,
+	--- Unix seconds the exit was seen, so the outcome stays on screen a while.
+	exited_at: number?,
 	--- The pane's title heuristic, from the agent profile.
 	title_status: string?,
 }
@@ -42,6 +44,8 @@ local KEY = "runs"
 -- A record is never pruned before this, so a launch can't be swept away
 -- between `start` returning and the pane appearing in a listing.
 local GRACE_SECONDS = 10
+-- How long an ended agent stays listed, so its exit status can be read.
+local EXIT_GRACE_SECONDS = 120
 
 -- Every record by pane id. A store that can't be read counts as empty.
 function runs.all(): { [number]: Record }
@@ -115,12 +119,17 @@ function runs.drop(pane: number)
 	end
 end
 
--- Which records `alive` (pane id → true) says are gone, ignoring ones young
--- enough that the pane may not be listed yet. Pure, so the tests cover it.
+-- Which records `alive` (pane id → true, every pane on the host) says are
+-- gone. A record is kept while its pane is listed, for a moment after the
+-- launch (the pane may not be listed yet) and for a while after an exit was
+-- recorded, so the Agents block can show how it ended. Pure, so the tests
+-- cover it.
 function runs.stale(all: { [number]: Record }, alive: { [number]: boolean }, now: number): { number }
 	local out: { number } = {}
 	for pane, record in all do
-		if not alive[pane] and now - record.started_at > GRACE_SECONDS then
+		local young = now - record.started_at <= GRACE_SECONDS
+		local just_ended = record.exited_at ~= nil and now - (record.exited_at :: number) <= EXIT_GRACE_SECONDS
+		if not alive[pane] and not young and not just_ended then
 			table.insert(out, pane)
 		end
 	end
@@ -128,7 +137,10 @@ function runs.stale(all: { [number]: Record }, alive: { [number]: boolean }, now
 	return out
 end
 
--- Drops the records of panes that are gone. Returns how many went.
+-- Drops the records of panes that are gone. `alive` must list every pane on
+-- the host (`tern.pane.list`), not one window's: the store is shared, so
+-- pruning from a single window's view would sweep agents another window
+-- launched. Returns how many went.
 function runs.prune(alive: { [number]: boolean }): number
 	local all = runs.all()
 	local gone = runs.stale(all, alive, os.time())
@@ -144,6 +156,20 @@ function runs.prune(alive: { [number]: boolean }): number
 	end
 	write(kept)
 	return #gone
+end
+
+-- Host only: prunes against every pane on this host. The one safe sweep, and
+-- what the host half and the Agents block both call.
+function runs.sweep(): number
+	local alive: { [number]: boolean } = {}
+	local ok, panes = pcall(tern.pane.list)
+	if not ok then
+		return 0
+	end
+	for _, info in panes do
+		alive[info.pane] = true
+	end
+	return runs.prune(alive)
 end
 
 return runs

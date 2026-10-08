@@ -1,11 +1,21 @@
 --!strict
 -- A one-line text field's editing, for blocks: the block owns the text and
--- the caret (Tern's `input` node only draws them). Byte offsets, so the caret
--- counts bytes in non-ASCII text; everything still works.
+-- the caret (Tern's `input` node only draws them).
+--
+-- The caret is a **byte** offset, because that is what `string.sub` wants.
+-- Tern's `input` counts its `cursor` in UTF-16 code units, so the view
+-- converts with `util.utf16_units` on the way out (`field.draw_cursor`).
+
+local util = require("./util")
 
 local field = {}
 
 export type Field = { text: string, cursor: number }
+
+-- The caret as Tern's `input` node wants it: UTF-16 code units, not bytes.
+function field.draw_cursor(f: Field): number
+	return util.utf16_units(string.sub(f.text, 1, f.cursor))
+end
 
 function field.new(text: string?): Field
 	local t = text or ""

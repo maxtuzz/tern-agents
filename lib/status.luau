@@ -38,7 +38,10 @@ local SPINNERS: { string } = {
 
 -- Claude Code's idle marker, and the asterisk shapes it animates through.
 local CLAUDE_IDLE = "✳"
-local CLAUDE_BUSY: { string } = { "✶", "✻", "✽", "·" }
+-- Only the asterisk shapes: a middle dot is ordinary punctuation in a title,
+-- not a spinner frame, and reading it as progress would be a claim the API
+-- can't support.
+local CLAUDE_BUSY: { string } = { "✶", "✻", "✽" }
 
 local function holds(text: string, needles: { string }): boolean
 	for _, needle in needles do

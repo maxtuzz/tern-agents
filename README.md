@@ -61,7 +61,7 @@ Nothing is bound except **New agent…** (⌘⇧Y); every command is an action, 
 | `claude yolo @~/dev/app read the diff` | claude | yolo | read the diff | `~/dev/app` |
 | `fix the build` | the default agent | its default | fix the build | focused pane's |
 
-A word is only eaten when it names a known agent, or a preset of that agent, so a prompt that starts with an ordinary word stays whole. A trailing colon (`opus:`) ends the agent/preset part explicitly, and is reported when it names nothing. `in <dir>` is deliberately **not** grammar — it would swallow the end of "fix the test in utils" — so a directory is always `@<path>`.
+A bare `@` is reported rather than taken as part of the prompt. A word is only eaten when it names a known agent, or a preset of that agent, so a prompt that starts with an ordinary word stays whole. A trailing colon (`opus:`) ends the agent/preset part explicitly, and is reported when it names nothing. `in <dir>` is deliberately **not** grammar — it would swallow the end of "fix the test in utils" — so a directory is always `@<path>`.
 
 ## Agents
 
@@ -212,7 +212,7 @@ Measured on Tern 0.5.2 (details in [DESIGN.md](DESIGN.md)):
 2. **An agent block's program does not inherit your interactive shell environment.** `claude`'s `#!/usr/bin/env node` picked Homebrew's Node instead of the nvm one on the user's PATH and the block exited 1. Every launch is therefore wrapped as `$SHELL -lic "exec <command>"`; `shell = false` (globally, per agent or per preset) opts out. The pane's `program` then reads the shell's name, which is why the plugin keeps its own record of what each pane is running.
 3. **No idle, no transcript for a non-omp agent.** `AgentBlock.state` stays `working` for ever, `cx.agents:wait` times out and `cx.agents:transcript` returns `{}`. The status heuristics above are what is left.
 4. **`cx.agents:ask` can't send a second prompt** to such an agent: Tern never sees a non-TSP composer report `sendable`, so it still counts the launch prompt as pending and fails with "agent already has a pending prompt". Follow-ups are typed in (`cx:run(pane, text .. "\r")`), which is what **Send prompt to agent…** and `send()` do.
-5. **A pane closed from outside the window** (another window, `tern close`) fires no `pane_closed` there, so stale records are swept on the next focus change or window start instead.
+5. **A window sees only its own panes** (`cx.session:panes()`), while the launch records are shared by every window, so the window half never deletes one. The host half sweeps instead — it can see every pane on the machine (`tern.pane.list()`) — when an agent exits and whenever the Agents block ticks. An ended agent stays listed for two minutes, so its exit status can be read.
 6. **No plugin-settings API.** `cx.settings` covers Tern's own keys, so config lives in `tern.kv` plus `agents.json`.
 7. **Writing any file inside the plugin directory triggers a plugin reload**, which cancels timers and in-flight work. The plugin only ever writes to its data directory.
 
@@ -226,7 +226,7 @@ Orca's terminal agents are the model this follows: `defaultTuiAgent`, `agentCmdO
 tests/run.sh      # bundles every module (tests/bundle.py) and runs them under plain `luau`
 ```
 
-62 tests, all green: config merging (kv, `agents.json`, malformed input), preset resolution, command building and shell quoting, login-shell wrapping, prompt delivery, quick-entry parsing, the editing grammars, status-from-title heuristics, Orca import, launch records and pruning, detection, both halves loading, the links the blocks answer with, the blocks themselves and the Carly exports.
+72 tests, all green: config merging (kv, `agents.json`, malformed input), preset resolution, command building and shell quoting, login-shell wrapping, prompt delivery, quick-entry parsing, the editing grammars, status-from-title heuristics, Orca import, launch records and pruning, detection, both halves loading, the links the blocks answer with, the blocks themselves and the Carly exports.
 
 ## Offline docs
 

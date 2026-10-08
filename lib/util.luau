@@ -222,6 +222,22 @@ function util.merge(a: { [string]: any }?, b: { [string]: any }?): { [string]: a
 	return out
 end
 
+-- How many UTF-16 code units `s` holds. Tern's `input` node counts its
+-- `cursor` and `anchor` in UTF-16 units, while Luau strings are bytes, so a
+-- block that edits by byte offset has to convert before drawing. Text that
+-- isn't valid UTF-8 (a half-pasted character) falls back to its byte length,
+-- which is what the caret was doing anyway.
+function util.utf16_units(s: string): number
+	local ok, n = pcall(function(): number
+		local count = 0
+		for _, code in utf8.codes(s) do
+			count += if code > 0xFFFF then 2 else 1
+		end
+		return count
+	end)
+	return if ok then n else #s
+end
+
 -- Lines of `text`, without trailing carriage returns.
 function util.lines(text: string): { string }
 	local out: { string } = {}
