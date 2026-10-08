@@ -37,3 +37,65 @@ Tern's agent blocks are bound to omp. Make them run whatever agent CLI the user 
 
 - No plugin-settings API (`cx.settings` covers Tern's own keys only): config lives in `tern.kv` plus an optional hand-edited JSON file in the plugin data dir, hand entries win (same as tern-worktrees).
 - Use only real Tern APIs; document every limitation in the README.
+
+## What the plugin does with that (0.1.0)
+
+### Two launch paths, because `start` needs a prompt
+
+| Launch | Path | Result |
+| --- | --- | --- |
+| With a prompt | `cx.agents:start{prompt, cwd, command, how}` | A real agent block: kind `agent`, the Agent chip, in `cx.agents:list()`. |
+| Without a prompt | `cx.layout:split`/`new_tab{cwd, command}` | A terminal pane running the same command line. |
+| `prompt_delivery = "argv"` | as above, prompt appended to the agent's own CLI | A terminal pane; `start` would deliver the prompt a second time. |
+
+Option (a) from the brief — putting the prompt on the agent's own command line
+— is supported as `prompt_delivery = "argv"` per agent, per preset or globally,
+and the profiles record how each CLI takes one (`prompt_arg`: `positional` for
+claude, codex, cursor-agent, grok and omp; `--prompt` for opencode; `-i` for
+the Gemini-family CLIs; `none` for aider, goose, amp, copilot, crush and
+hermes, whose prompt flags are one-shot). It is not the default: Tern's own
+delivery works, and a real agent block is worth more than argv tidiness.
+
+Option (c) — setting the `agent_command` preference, running Tern's
+`new_agent_block` and restoring it — is **rejected**. `cx.settings:set` is
+global: it races every other window, and any failure between the two writes
+would leave the user's `agent_command` pointing at an agent they never chose.
+A launch is not worth that.
+
+### Shell wrapping
+
+Every command line is wrapped as `$SHELL -lic "exec <command>"` (from
+`tern.getenv("SHELL")`, else `/bin/zsh`), because the spawn environment lacks
+the user's interactive PATH (finding above). `shell = false` opts out globally,
+per agent or per preset. The alternative — resolving the PATH once with
+`tern.process.run` and caching it — was rejected for launching: it would fix
+PATH but not the rest of the user's rc files (nvm shims, `direnv`, agent
+wrappers, `GOOSE_MODE`-style exports), and a cached PATH goes stale silently.
+The same login shell is used, once, for **detection**, where the only question
+is whether a binary exists (`command -v`, cached 15 minutes).
+
+### Status
+
+`exited` (host `pane_exited` → the launch record; `PaneInfo.exited`), then the
+pane title (`✳` idle / spinner working for Claude; spinner-only for the other
+TUIs), then `PaneInfo.busy`, then `running` — never a claim the API can't
+support. Panes that are gone read `closed` and their records are pruned.
+
+### Where state lives
+
+- `tern.kv` `config` — the palette's own agent profiles, presets and defaults.
+- `agents.json` in the plugin **data** dir — hand-edited, wins over `config`.
+- `tern.kv` `runs` — pane → {agent, preset, cwd, command, started_at, kind},
+  so the block, the status line, Restart and `running()` survive reloads.
+- `tern.kv` `detected` — the last login-shell probe, with the shell it asked.
+
+Nothing is ever written inside the plugin directory (that would trigger a
+reload and cancel timers).
+
+### Smoke test (2026-10-08, Tern 0.5.2)
+
+A `claude:haiku` preset launched through the plugin's own link route ran
+`/bin/zsh -lic "exec claude --model haiku"` in a real agent block, received
+its prompt, answered, and left the pane titled `✳ PONG reply` — idle by the
+heuristic above. The record landed in `kv.json` with `kind = "block"`; closing
+the pane and the session left nothing behind.
