@@ -1,0 +1,25 @@
+schema = 1
+id = "agents"
+name = "Agents"
+version = "0.1.0"
+description = "Run any agent CLI (Claude, Codex, Gemini, OpenCode, …) as a Tern agent block, with run presets"
+icon = "sparkles"
+host = "host.luau"
+window = "window.luau"
+styles = ["agents.css"]
+
+[[blocks]]
+id = "list"
+title = "Agents"
+icon = "sparkles"
+palette = false
+
+[[blocks]]
+id = "pick"
+title = "Agents"
+palette = false
+
+[[blocks]]
+id = "line"
+title = "Agents"
+palette = false

@@ -1,0 +1,65 @@
+/* Agents: the plugin's own surfaces only, so nothing here changes how
+   another plugin's blocks or omp's own agent rows are drawn. */
+
+/* The Agents block is meant for a sidebar (~250-320px, about 36-45 cells), so
+   a section's body gives its space to the rows rather than to Tern's inset
+   guide line. */
+[data-surface^='plugin.agents.'] .sf-section > .sf-section-body {
+	padding: 1px 0 4px 0;
+	margin-left: 0;
+	box-shadow: none;
+}
+
+/* One launch: the native agent row, with its controls tucked under it. */
+[data-surface^='plugin.agents.'] [data-role='agents.row'] {
+	padding: 2px 0 4px 0;
+	border-radius: 5px;
+}
+
+[data-surface^='plugin.agents.'] [data-role='agents.row']:hover {
+	background-color: var(--l1);
+}
+
+/* The controls stay quiet until the row is hovered or focused, so a list of
+   five agents reads as five agents, not as twenty-five buttons. */
+[data-surface^='plugin.agents.'] [data-role='agents.controls'] {
+	padding-left: 24px;
+	gap: 4px;
+	opacity: 0;
+	transition: opacity 90ms ease-out;
+}
+
+[data-surface^='plugin.agents.'] [data-role='agents.row']:hover [data-role='agents.controls'],
+[data-surface^='plugin.agents.'] [data-role='agents.row']:focus-within [data-role='agents.controls'] {
+	opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-surface^='plugin.agents.'] [data-role='agents.controls'] {
+		transition: none;
+	}
+}
+
+/* Touch and coarse pointers never hover, so the controls are always there. */
+@media (hover: none) {
+	[data-surface^='plugin.agents.'] [data-role='agents.controls'] {
+		opacity: 1;
+	}
+}
+
+/* A chip that acts like a button says so. */
+[data-surface^='plugin.agents.'] .sf-badge[tabindex] {
+	cursor: pointer;
+}
+
+/* The dialogs get a little breathing room around the form. */
+[data-surface='plugin.agents.pick'].sf-main,
+[data-surface='plugin.agents.line'].sf-main {
+	padding: 6px 4px;
+}
+
+/* The focused agent's status segment reads as a label, like the branch in
+   tern-worktrees. */
+#statusline .sl-plugin[data-plugin='agents'] {
+	font-weight: 600;
+}
