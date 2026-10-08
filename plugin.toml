@@ -1,0 +1,7 @@
+schema = 1
+id = "agents"
+name = "Agents"
+version = "0.1.0"
+description = "Run any agent CLI (Claude, Codex, Gemini, OpenCode, …) as a Tern agent block, with run presets"
+icon = "sparkles"
+window = "window.luau"

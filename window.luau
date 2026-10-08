@@ -1,0 +1,2 @@
+--!strict
+-- Agents: window half (scaffold; the implementation replaces this).
